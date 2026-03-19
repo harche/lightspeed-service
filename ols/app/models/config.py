@@ -1124,6 +1124,9 @@ class OLSConfig(BaseModel):
 
     tools_approval: Optional[ToolsApprovalConfig] = None
 
+    orchestrator_type: str = constants.ORCHESTRATOR_LANGCHAIN
+    agent_sdk_backend: Optional[str] = None
+
     def __init__(
         self, data: Optional[dict] = None, ignore_missing_certs: bool = False
     ) -> None:
@@ -1181,6 +1184,11 @@ class OLSConfig(BaseModel):
         if data.get("tools_approval", None) is not None:
             self.tools_approval = ToolsApprovalConfig(**data.get("tools_approval"))
 
+        self.orchestrator_type = data.get(
+            "orchestrator_type", constants.ORCHESTRATOR_LANGCHAIN
+        )
+        self.agent_sdk_backend = data.get("agent_sdk_backend", None)
+
     def __eq__(self, other: object) -> bool:
         """Compare two objects for equality."""
         if isinstance(other, OLSConfig):
@@ -1205,6 +1213,8 @@ class OLSConfig(BaseModel):
                 and self.proxy_config == other.proxy_config
                 and self.tool_filtering == other.tool_filtering
                 and self.tools_approval == other.tools_approval
+                and self.orchestrator_type == other.orchestrator_type
+                and self.agent_sdk_backend == other.agent_sdk_backend
             )
         return False
 
@@ -1225,6 +1235,25 @@ class OLSConfig(BaseModel):
             self.authentication_config.validate_yaml()
         if self.proxy_config is not None:
             self.proxy_config.validate_yaml()
+        self._validate_orchestrator_config()
+
+    def _validate_orchestrator_config(self) -> None:
+        """Validate orchestrator-related configuration."""
+        if self.orchestrator_type not in constants.SUPPORTED_ORCHESTRATOR_TYPES:
+            raise checks.InvalidConfigurationError(
+                f"invalid orchestrator_type: {self.orchestrator_type}, "
+                f"supported types are {set(constants.SUPPORTED_ORCHESTRATOR_TYPES)}"
+            )
+        if self.orchestrator_type == constants.ORCHESTRATOR_AGENT_SDK:
+            if (
+                self.agent_sdk_backend is None
+                or self.agent_sdk_backend not in constants.SUPPORTED_AGENT_SDK_BACKENDS
+            ):
+                raise checks.InvalidConfigurationError(
+                    f"agent_sdk_backend must be one of "
+                    f"{set(constants.SUPPORTED_AGENT_SDK_BACKENDS)} "
+                    f"when orchestrator_type is '{constants.ORCHESTRATOR_AGENT_SDK}'"
+                )
 
 
 class DevConfig(BaseModel):

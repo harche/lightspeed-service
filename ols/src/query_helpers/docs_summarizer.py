@@ -6,7 +6,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Coroutine, Optional, TypeAlias
+from typing import Any, AsyncGenerator, Optional, TypeAlias
 
 from langchain_core.globals import set_debug
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
@@ -23,6 +23,7 @@ from ols.constants import GenericLLMParameters
 from ols.src.prompts.prompt_generator import GeneratePrompt
 from ols.src.query_helpers.query_helper import QueryHelper
 from ols.src.tools.tools import execute_tool_calls
+from ols.utils.async_utils import drain_generate_response, run_async_safely
 from ols.utils.mcp_utils import ClientHeaders, build_mcp_config, get_mcp_tools
 from ols.utils.token_handler import TokenHandler
 
@@ -82,17 +83,6 @@ def tool_calls_from_tool_calls_chunks(
     for chunk in tool_calls_chunks:
         response += chunk  # type: ignore [assignment]
     return response.tool_calls
-
-
-def run_async_safely(coro: Coroutine[Any, Any, Any]) -> Any:
-    """Run an async function safely."""
-    try:
-        return asyncio.run(coro)
-    except RuntimeError as e:
-        if "already running" in str(e).lower():
-            logger.warning("Using existing event loop as one is already running")
-            return asyncio.get_event_loop().run_until_complete(coro)
-        raise
 
 
 class DocsSummarizer(QueryHelper):
@@ -863,36 +853,8 @@ class DocsSummarizer(QueryHelper):
         This method drains the async response stream and aggregates it into
         a SummarizerResponse for non-streaming callers.
         """
-
-        async def drain_generate_response() -> SummarizerResponse:
-            """Collect all generated chunks into a single response object."""
-            chunks: list[str] = []
-            response_end: dict[str, object] = {}
-            tool_calls: list[dict[str, object]] = []
-            tool_results: list[dict[str, object]] = []
-            async for chunk in self.generate_response(query, rag_retriever, history):
-                match chunk.type:
-                    case ChunkType.END:
-                        response_end = chunk.data
-                        break
-                    case ChunkType.TOOL_CALL:
-                        tool_calls.append(chunk.data)
-                    case ChunkType.TOOL_RESULT:
-                        tool_results.append(chunk.data)
-                    case ChunkType.TEXT:
-                        chunks.append(chunk.text)
-                    case _:
-                        msg = f"Unknown chunk type: {chunk.type}"
-                        logger.warning(msg)
-                        raise ValueError(msg)
-
-            return SummarizerResponse(
-                response="".join(chunks),
-                rag_chunks=response_end.get("rag_chunks", []),
-                history_truncated=response_end.get("truncated", False),
-                token_counter=response_end.get("token_counter", None),
-                tool_calls=tool_calls,
-                tool_results=tool_results,
+        return run_async_safely(
+            drain_generate_response(
+                self.generate_response(query, rag_retriever, history)
             )
-
-        return run_async_safely(drain_generate_response())
+        )

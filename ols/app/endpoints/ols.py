@@ -33,8 +33,8 @@ from ols.app.models.models import (
 )
 from ols.src.auth.auth import get_auth_dependency
 from ols.src.llms.llm_loader import LLMConfigurationError, resolve_provider_config
+from ols.src.orchestrators.factory import create_orchestrator
 from ols.src.query_helpers.attachment_appender import append_attachments_to_query
-from ols.src.query_helpers.docs_summarizer import DocsSummarizer
 from ols.src.quota.quota_limiter import QuotaLimiter
 from ols.src.quota.token_usage_history import TokenUsageHistory
 from ols.utils import errors_parsing, suid
@@ -556,7 +556,7 @@ def generate_response(
         SummarizerResponse or Generator, depending on the streaming flag.
     """
     try:
-        docs_summarizer = DocsSummarizer(
+        orchestrator = create_orchestrator(
             provider=llm_request.provider,
             model=llm_request.model,
             system_prompt=llm_request.system_prompt,
@@ -566,10 +566,10 @@ def generate_response(
         )
         history = CacheEntry.cache_entries_to_history(previous_input)
         if streaming:
-            return docs_summarizer.generate_response(
+            return orchestrator.generate_response(
                 llm_request.query, config.rag_index_loader.get_retriever(), history
             )
-        response = docs_summarizer.create_response(
+        response = orchestrator.create_response(
             llm_request.query,
             config.rag_index_loader.get_retriever(),
             history,

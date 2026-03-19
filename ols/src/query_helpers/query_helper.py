@@ -8,7 +8,7 @@ from langchain_core.language_models.llms import LLM
 
 from ols import config
 from ols.src.llms.llm_loader import load_llm
-from ols.src.prompts.prompts import QUERY_SYSTEM_INSTRUCTION
+from ols.utils.async_utils import resolve_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +33,5 @@ class QueryHelper:
         self.generic_llm_params = generic_llm_params or {}
         self.llm_loader = llm_loader or load_llm
 
-        self._system_prompt = (
-            (config.dev_config.enable_system_prompt_override and system_prompt)
-            or config.ols_config.system_prompt
-            or QUERY_SYSTEM_INSTRUCTION
-        )
+        self._system_prompt = resolve_system_prompt(system_prompt)
         logger.debug("System prompt: %s", self._system_prompt)

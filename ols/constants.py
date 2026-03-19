@@ -232,3 +232,25 @@ MCP_CLIENT_PLACEHOLDER = "client"
 # timeout value for a single llm with tools round
 # Keeping it really high at this moment (until this is configurable)
 TOOL_CALL_ROUND_TIMEOUT = 300
+
+# orchestrator types
+ORCHESTRATOR_LANGCHAIN = "langchain"
+ORCHESTRATOR_AGENT_SDK = "agent_sdk"
+SUPPORTED_ORCHESTRATOR_TYPES = frozenset(
+    {ORCHESTRATOR_LANGCHAIN, ORCHESTRATOR_AGENT_SDK}
+)
+
+# agent SDK backends
+AGENT_SDK_BACKEND_ANTHROPIC = "anthropic"
+AGENT_SDK_BACKEND_OPENAI = "openai"
+AGENT_SDK_BACKEND_GOOGLE_ADK = "google_adk"
+SUPPORTED_AGENT_SDK_BACKENDS = frozenset(
+    {
+        AGENT_SDK_BACKEND_ANTHROPIC,
+        AGENT_SDK_BACKEND_OPENAI,
+        AGENT_SDK_BACKEND_GOOGLE_ADK,
+    }
+)
+
+# built-in tools available to Claude Agent SDK backends
+AGENT_SDK_DEFAULT_TOOLS = ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"]
