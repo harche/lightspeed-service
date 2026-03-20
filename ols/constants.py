@@ -254,3 +254,18 @@ SUPPORTED_AGENT_SDK_BACKENDS = frozenset(
 
 # built-in tools available to Claude Agent SDK backends
 AGENT_SDK_DEFAULT_TOOLS = ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"]
+
+# capability modes for agent SDK orchestrator
+MODE_QA = "qa"
+MODE_DESIGN = "design"
+MODE_DEPLOY = "deploy"
+MODE_REMEDIATE = "remediate"
+MODE_ESCALATE = "escalate"
+SUPPORTED_MODES = frozenset({MODE_QA, MODE_DESIGN, MODE_DEPLOY, MODE_REMEDIATE, MODE_ESCALATE})
+
+# per-mode tool sets — matches Claude Agent SDK defaults from kubeklaw-agent
+AGENT_SDK_READONLY_TOOLS = ["Bash", "Read", "Glob", "Grep", "Skill"]
+AGENT_SDK_WRITE_TOOLS = ["Bash", "Read", "Glob", "Grep", "Skill"]
+
+# design mode gets web access for researching operators/patterns
+AGENT_SDK_DESIGN_TOOLS = ["Bash", "Read", "Glob", "Grep", "Skill", "WebSearch", "WebFetch"]

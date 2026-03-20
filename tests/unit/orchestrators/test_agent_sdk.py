@@ -12,6 +12,10 @@ from ols.src.orchestrators.agent_sdk import (
     GoogleADKBackend,
     OpenAIAgentBackend,
 )
+from ols.src.orchestrators.prompts import (
+    DESIGN_SYSTEM_PROMPT,
+    REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
+)
 from ols.utils.checks import InvalidConfigurationError
 
 
@@ -204,3 +208,168 @@ def test_backend_run_config_stores_all_fields():
     assert cfg.provider_url == "https://api"
     assert cfg.max_tokens == 200
     assert cfg.max_iterations == 10
+
+
+# --- Mode tests ---
+
+
+def test_backend_run_config_default_mode():
+    """Test that BackendRunConfig defaults to qa mode."""
+    cfg = BackendRunConfig(
+        query="q",
+        system_prompt="s",
+        history=[],
+        model="m",
+        credentials=None,
+        provider_url=None,
+        max_tokens=100,
+        max_iterations=3,
+    )
+    assert cfg.mode == constants.MODE_QA
+
+
+def test_backend_run_config_default_tools():
+    """Test that BackendRunConfig gets default tools when none provided."""
+    cfg = BackendRunConfig(
+        query="q",
+        system_prompt="s",
+        history=[],
+        model="m",
+        credentials=None,
+        provider_url=None,
+        max_tokens=100,
+        max_iterations=3,
+    )
+    assert cfg.tools == constants.AGENT_SDK_DEFAULT_TOOLS
+
+
+def test_backend_run_config_custom_tools():
+    """Test that BackendRunConfig accepts custom tool list."""
+    custom_tools = ["Bash", "Read"]
+    cfg = BackendRunConfig(
+        query="q",
+        system_prompt="s",
+        history=[],
+        model="m",
+        credentials=None,
+        provider_url=None,
+        max_tokens=100,
+        max_iterations=3,
+        tools=custom_tools,
+    )
+    assert cfg.tools == custom_tools
+
+
+def test_backend_run_config_explicit_mode():
+    """Test that BackendRunConfig accepts explicit mode."""
+    cfg = BackendRunConfig(
+        query="q",
+        system_prompt="s",
+        history=[],
+        model="m",
+        credentials=None,
+        provider_url=None,
+        max_tokens=100,
+        max_iterations=3,
+        mode=constants.MODE_DESIGN,
+    )
+    assert cfg.mode == constants.MODE_DESIGN
+
+
+def test_orchestrator_default_mode_is_qa():
+    """Test that orchestrator defaults to qa mode."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+    )
+    assert orchestrator.mode == constants.MODE_QA
+
+
+def test_orchestrator_design_mode_uses_design_prompt():
+    """Test that design mode selects the design system prompt."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_DESIGN,
+    )
+    assert orchestrator._system_prompt == DESIGN_SYSTEM_PROMPT
+
+
+def test_orchestrator_remediate_mode_uses_remediate_prompt():
+    """Test that remediate mode selects the remediate analysis prompt."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_REMEDIATE,
+    )
+    assert orchestrator._system_prompt == REMEDIATE_ANALYSIS_SYSTEM_PROMPT
+
+
+def test_orchestrator_qa_mode_uses_config_prompt():
+    """Test that qa mode falls back to config system prompt."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_QA,
+    )
+    assert orchestrator._system_prompt == config.ols_config.system_prompt
+
+
+def test_orchestrator_design_mode_tools():
+    """Test that design mode gets web-enabled tools."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_DESIGN,
+    )
+    assert orchestrator._tools == constants.AGENT_SDK_DESIGN_TOOLS
+    assert "WebSearch" in orchestrator._tools
+    assert "WebFetch" in orchestrator._tools
+    assert "Skill" in orchestrator._tools
+
+
+def test_orchestrator_remediate_mode_tools():
+    """Test that remediate mode gets read-only tools."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_REMEDIATE,
+    )
+    assert orchestrator._tools == constants.AGENT_SDK_READONLY_TOOLS
+    assert "Bash" in orchestrator._tools
+    assert "Skill" in orchestrator._tools
+
+
+def test_orchestrator_deploy_mode_tools():
+    """Test that deploy mode gets write tools."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_DEPLOY,
+    )
+    assert orchestrator._tools == constants.AGENT_SDK_WRITE_TOOLS
+
+
+def test_orchestrator_qa_mode_tools():
+    """Test that qa mode gets default tools."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_QA,
+    )
+    assert orchestrator._tools == constants.AGENT_SDK_DEFAULT_TOOLS
+
+
+def test_orchestrator_system_prompt_override_takes_precedence():
+    """Test that explicit system_prompt override beats mode prompt."""
+    config.dev_config.enable_system_prompt_override = True
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_DESIGN,
+        system_prompt="my custom prompt",
+    )
+    assert orchestrator._system_prompt == "my custom prompt"
+    config.dev_config.enable_system_prompt_override = False
+
+
+def test_orchestrator_system_prompt_override_ignored_when_disabled():
+    """Test that system_prompt override is ignored when config disables it."""
+    config.dev_config.enable_system_prompt_override = False
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_DESIGN,
+        system_prompt="my custom prompt",
+    )
+    assert orchestrator._system_prompt == DESIGN_SYSTEM_PROMPT

@@ -9,6 +9,10 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator, Optional
 
 from ols import config, constants
 from ols.app.models.models import ChunkType, StreamedChunk, SummarizerResponse
+from ols.src.orchestrators.prompts import (
+    DESIGN_SYSTEM_PROMPT,
+    REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
+)
 from ols.utils.async_utils import (
     drain_generate_response,
     resolve_system_prompt,
@@ -39,6 +43,13 @@ class BackendRunConfig:
     provider_url: Optional[str]
     max_tokens: int
     max_iterations: int
+    mode: str = constants.MODE_QA
+    tools: list[str] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        """Set default tools if not provided."""
+        if self.tools is None:
+            object.__setattr__(self, "tools", list(constants.AGENT_SDK_DEFAULT_TOOLS))
 
 
 class AgentSDKBackend(ABC):
@@ -174,7 +185,7 @@ class AnthropicAgentBackend(AgentSDKBackend):
             system_prompt=run_config.system_prompt,
             max_turns=run_config.max_iterations,
             permission_mode="bypassPermissions",
-            allowed_tools=constants.AGENT_SDK_DEFAULT_TOOLS,
+            allowed_tools=run_config.tools,
         )
 
         round_index = 0
@@ -252,6 +263,7 @@ class AgentSDKOrchestrator:
         client_headers: Any = None,
         streaming: bool = False,
         backend_type: str = constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode: str = constants.MODE_QA,
     ) -> None:
         """Initialize the AgentSDKOrchestrator.
 
@@ -263,11 +275,16 @@ class AgentSDKOrchestrator:
             client_headers: Accepted for interface compatibility (unused).
             streaming: Whether this orchestrator is used for streaming.
             backend_type: Which agent SDK backend to use.
+            mode: Capability mode (qa, design, remediate, etc.).
         """
         self.provider = provider or config.ols_config.default_provider
         self.model = model or config.ols_config.default_model
         self.streaming = streaming
-        self._system_prompt = resolve_system_prompt(system_prompt)
+        self.mode = mode
+
+        # Mode-specific system prompt and tools
+        self._system_prompt = self._resolve_mode_prompt(system_prompt)
+        self._tools = self._resolve_mode_tools()
 
         self.provider_config = config.llm_config.providers.get(self.provider)
         if self.provider_config is None:
@@ -291,11 +308,36 @@ class AgentSDKOrchestrator:
         self._backend = backend_cls()
 
         logger.info(
-            "AgentSDKOrchestrator initialized: provider=%s, model=%s, backend=%s",
+            "AgentSDKOrchestrator initialized: provider=%s, model=%s, backend=%s, mode=%s",
             self.provider,
             self.model,
             backend_type,
+            self.mode,
         )
+
+    def _resolve_mode_prompt(self, system_prompt_override: Optional[str]) -> str:
+        """Resolve system prompt based on mode."""
+        # Explicit override takes precedence
+        if config.dev_config.enable_system_prompt_override and system_prompt_override:
+            return system_prompt_override
+
+        mode_prompts = {
+            constants.MODE_DESIGN: DESIGN_SYSTEM_PROMPT,
+            constants.MODE_REMEDIATE: REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
+        }
+        if self.mode in mode_prompts:
+            return mode_prompts[self.mode]
+        return resolve_system_prompt(system_prompt_override)
+
+    def _resolve_mode_tools(self) -> list[str]:
+        """Resolve tool set based on mode."""
+        mode_tools = {
+            constants.MODE_DESIGN: constants.AGENT_SDK_DESIGN_TOOLS,
+            constants.MODE_DEPLOY: constants.AGENT_SDK_WRITE_TOOLS,
+            constants.MODE_REMEDIATE: constants.AGENT_SDK_READONLY_TOOLS,
+            constants.MODE_ESCALATE: constants.AGENT_SDK_READONLY_TOOLS,
+        }
+        return list(mode_tools.get(self.mode, constants.AGENT_SDK_DEFAULT_TOOLS))
 
     async def generate_response(
         self,
@@ -325,6 +367,8 @@ class AgentSDKOrchestrator:
             provider_url=self._provider_url,
             max_tokens=self.model_config.parameters.max_tokens_for_response,
             max_iterations=config.ols_config.max_iterations,
+            mode=self.mode,
+            tools=self._tools,
         )
 
         async for chunk in self._backend.run(run_config):

@@ -1,0 +1,28 @@
+llm_providers:
+  - name: vertex_claude
+    type: openai
+    url: "https://not-used-by-agent-sdk.example.com"
+    credentials_path: /dev/null
+    models:
+      - name: claude-opus-4-6
+        parameters:
+          max_tokens_for_response: 16384
+
+ols_config:
+  default_provider: vertex_claude
+  default_model: claude-opus-4-6
+  orchestrator_type: agent_sdk
+  agent_sdk_backend: anthropic
+  conversation_cache:
+    type: memory
+    memory:
+      max_entries: 100
+  logging_config:
+    app_log_level: info
+    lib_log_level: warning
+    uvicorn_log_level: info
+
+dev_config:
+  enable_dev_ui: true
+  disable_auth: true
+  disable_tls: true

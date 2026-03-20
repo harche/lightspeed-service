@@ -89,6 +89,7 @@ class LLMRequest(BaseModel):
     attachments: Optional[list[Attachment]] = None
     media_type: Optional[str] = MEDIA_TYPE_TEXT
     mcp_headers: Optional[dict[str, dict[str, str]]] = None
+    mode: Optional[str] = None
 
     # provides examples for /docs endpoint
     model_config = {

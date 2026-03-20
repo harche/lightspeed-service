@@ -67,3 +67,30 @@ def test_factory_passes_params_to_docs_summarizer():
     assert isinstance(orchestrator, DocsSummarizer)
     assert orchestrator.provider == "p1"
     assert orchestrator.model == "m1"
+
+
+def test_factory_passes_mode_to_agent_sdk():
+    """Test that the factory passes mode to AgentSDKOrchestrator."""
+    config.ols_config.orchestrator_type = constants.ORCHESTRATOR_AGENT_SDK
+    config.ols_config.agent_sdk_backend = constants.AGENT_SDK_BACKEND_ANTHROPIC
+    orchestrator = create_orchestrator(mode=constants.MODE_DESIGN)
+    assert isinstance(orchestrator, AgentSDKOrchestrator)
+    assert orchestrator.mode == constants.MODE_DESIGN
+
+
+def test_factory_defaults_mode_to_qa():
+    """Test that the factory defaults to qa mode when none specified."""
+    config.ols_config.orchestrator_type = constants.ORCHESTRATOR_AGENT_SDK
+    config.ols_config.agent_sdk_backend = constants.AGENT_SDK_BACKEND_ANTHROPIC
+    orchestrator = create_orchestrator()
+    assert isinstance(orchestrator, AgentSDKOrchestrator)
+    assert orchestrator.mode == constants.MODE_QA
+
+
+def test_factory_passes_remediate_mode():
+    """Test that the factory passes remediate mode correctly."""
+    config.ols_config.orchestrator_type = constants.ORCHESTRATOR_AGENT_SDK
+    config.ols_config.agent_sdk_backend = constants.AGENT_SDK_BACKEND_ANTHROPIC
+    orchestrator = create_orchestrator(mode=constants.MODE_REMEDIATE)
+    assert isinstance(orchestrator, AgentSDKOrchestrator)
+    assert orchestrator.mode == constants.MODE_REMEDIATE

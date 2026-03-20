@@ -108,6 +108,7 @@ def conversation_request(
         streaming=True,
         user_token=processed_request.user_token,
         client_headers=client_headers,
+        mode=llm_request.mode,
     )
 
     return StreamingResponse(

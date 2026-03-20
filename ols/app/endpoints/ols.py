@@ -129,6 +129,7 @@ def conversation_request(
         streaming=False,
         user_token=processed_request.user_token,
         client_headers=client_headers,
+        mode=llm_request.mode,
     )
 
     processed_request.timestamps["generate response"] = time.time()
@@ -541,6 +542,7 @@ def generate_response(
     streaming: bool = False,
     user_token: Optional[str] = None,
     client_headers: dict[str, dict[str, str]] | None = None,
+    mode: Optional[str] = None,
 ) -> Union[SummarizerResponse, Generator]:
     """Generate response based on validation result, previous input, and model output.
 
@@ -563,6 +565,7 @@ def generate_response(
             user_token=user_token,
             client_headers=client_headers,
             streaming=streaming,
+            mode=mode,
         )
         history = CacheEntry.cache_entries_to_history(previous_input)
         if streaming:

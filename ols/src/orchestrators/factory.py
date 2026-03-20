@@ -20,6 +20,7 @@ def create_orchestrator(
     client_headers: Optional[ClientHeaders] = None,
     streaming: bool = False,
     llm_loader: Optional[Callable[[str, str, dict], LLM]] = None,
+    mode: Optional[str] = None,
 ) -> Any:
     """Create the appropriate orchestrator based on configuration.
 
@@ -55,7 +56,12 @@ def create_orchestrator(
             "agent_sdk_backend",
             constants.AGENT_SDK_BACKEND_ANTHROPIC,
         )
-        logger.info("Creating AgentSDKOrchestrator with backend=%s", backend_type)
+        resolved_mode = mode or constants.MODE_QA
+        logger.info(
+            "Creating AgentSDKOrchestrator with backend=%s, mode=%s",
+            backend_type,
+            resolved_mode,
+        )
         return AgentSDKOrchestrator(
             provider=provider,
             model=model,
@@ -64,6 +70,7 @@ def create_orchestrator(
             client_headers=client_headers,
             streaming=streaming,
             backend_type=backend_type,
+            mode=resolved_mode,
         )
 
     # Lazy import: DocsSummarizer triggers the auth dependency chain at import time
