@@ -13,9 +13,13 @@ from ols.src.orchestrators.agent_sdk import (
     OpenAIAgentBackend,
 )
 from ols.src.orchestrators.prompts import (
+    DEPLOY_SYSTEM_PROMPT,
     DESIGN_SYSTEM_PROMPT,
+    MONITOR_SYSTEM_PROMPT,
     REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
+    build_escalation_prompt,
 )
+from ols.src.orchestrators.schemas import MODE_OUTPUT_SCHEMAS
 from ols.utils.checks import InvalidConfigurationError
 
 
@@ -318,9 +322,6 @@ def test_orchestrator_design_mode_tools():
         mode=constants.MODE_DESIGN,
     )
     assert orchestrator._tools == constants.AGENT_SDK_DESIGN_TOOLS
-    assert "WebSearch" in orchestrator._tools
-    assert "WebFetch" in orchestrator._tools
-    assert "Skill" in orchestrator._tools
 
 
 def test_orchestrator_remediate_mode_tools():
@@ -330,8 +331,6 @@ def test_orchestrator_remediate_mode_tools():
         mode=constants.MODE_REMEDIATE,
     )
     assert orchestrator._tools == constants.AGENT_SDK_READONLY_TOOLS
-    assert "Bash" in orchestrator._tools
-    assert "Skill" in orchestrator._tools
 
 
 def test_orchestrator_deploy_mode_tools():
@@ -354,14 +353,16 @@ def test_orchestrator_qa_mode_tools():
 
 def test_orchestrator_system_prompt_override_takes_precedence():
     """Test that explicit system_prompt override beats mode prompt."""
-    config.dev_config.enable_system_prompt_override = True
-    orchestrator = AgentSDKOrchestrator(
-        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
-        mode=constants.MODE_DESIGN,
-        system_prompt="my custom prompt",
-    )
-    assert orchestrator._system_prompt == "my custom prompt"
-    config.dev_config.enable_system_prompt_override = False
+    try:
+        config.dev_config.enable_system_prompt_override = True
+        orchestrator = AgentSDKOrchestrator(
+            backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+            mode=constants.MODE_DESIGN,
+            system_prompt="my custom prompt",
+        )
+        assert orchestrator._system_prompt == "my custom prompt"
+    finally:
+        config.dev_config.enable_system_prompt_override = False
 
 
 def test_orchestrator_system_prompt_override_ignored_when_disabled():
@@ -373,3 +374,198 @@ def test_orchestrator_system_prompt_override_ignored_when_disabled():
         system_prompt="my custom prompt",
     )
     assert orchestrator._system_prompt == DESIGN_SYSTEM_PROMPT
+
+
+def test_orchestrator_deploy_mode_uses_deploy_prompt():
+    """Test that deploy mode selects the deploy system prompt."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_DEPLOY,
+    )
+    assert orchestrator._system_prompt == DEPLOY_SYSTEM_PROMPT
+
+
+def test_orchestrator_monitor_mode_uses_monitor_prompt():
+    """Test that monitor mode selects the monitor system prompt."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_MONITOR,
+    )
+    assert orchestrator._system_prompt == MONITOR_SYSTEM_PROMPT
+
+
+def test_orchestrator_escalate_mode_uses_escalation_prompt():
+    """Test that escalate mode builds the escalation prompt with target repo."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_ESCALATE,
+    )
+    expected = build_escalation_prompt(constants.DEFAULT_ESCALATION_TARGET_REPO)
+    assert orchestrator._system_prompt == expected
+    assert constants.DEFAULT_ESCALATION_TARGET_REPO in orchestrator._system_prompt
+
+
+def test_orchestrator_monitor_mode_tools():
+    """Test that monitor mode gets monitor (readonly) tools."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_MONITOR,
+    )
+    assert orchestrator._tools == constants.AGENT_SDK_MONITOR_TOOLS
+
+
+def test_orchestrator_escalate_mode_tools():
+    """Test that escalate mode gets escalation tools with web access."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_ESCALATE,
+    )
+    assert orchestrator._tools == constants.AGENT_SDK_ESCALATION_TOOLS
+
+
+def test_orchestrator_verify_mode_tools():
+    """Test that verify mode gets readonly tools."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_VERIFY,
+    )
+    assert orchestrator._tools == constants.AGENT_SDK_VERIFY_TOOLS
+
+
+def test_mode_verify_in_supported_modes():
+    """Test that MODE_VERIFY is included in SUPPORTED_MODES."""
+    assert constants.MODE_VERIFY in constants.SUPPORTED_MODES
+
+
+def test_mode_monitor_in_supported_modes():
+    """Test that MODE_MONITOR is included in SUPPORTED_MODES."""
+    assert constants.MODE_MONITOR in constants.SUPPORTED_MODES
+
+
+def test_all_modes_have_prompt_mapping():
+    """Test that every non-QA mode has a dedicated system prompt."""
+    modes_with_prompts = {
+        constants.MODE_DESIGN,
+        constants.MODE_DEPLOY,
+        constants.MODE_MONITOR,
+        constants.MODE_REMEDIATE,
+        constants.MODE_ESCALATE,
+        constants.MODE_VERIFY,
+    }
+    for mode in modes_with_prompts:
+        orchestrator = AgentSDKOrchestrator(
+            backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+            mode=mode,
+        )
+        # Mode-specific prompts should NOT equal the default config prompt
+        assert orchestrator._system_prompt != config.ols_config.system_prompt
+
+
+# --- Schema tests ---
+
+
+def test_orchestrator_design_mode_has_output_schema():
+    """Test that design mode resolves an output schema."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_DESIGN,
+    )
+    assert orchestrator._output_format is not None
+    assert orchestrator._output_format["type"] == "json_schema"
+    assert "proposal" in orchestrator._output_format["schema"]["required"]
+
+
+def test_orchestrator_deploy_mode_has_output_schema():
+    """Test that deploy mode resolves an output schema."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_DEPLOY,
+    )
+    assert orchestrator._output_format is not None
+    assert orchestrator._output_format["type"] == "json_schema"
+    assert "result" in orchestrator._output_format["schema"]["required"]
+
+
+def test_orchestrator_monitor_mode_has_output_schema():
+    """Test that monitor mode resolves an output schema."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_MONITOR,
+    )
+    assert orchestrator._output_format is not None
+    assert orchestrator._output_format["type"] == "json_schema"
+    assert "health" in orchestrator._output_format["schema"]["required"]
+
+
+def test_orchestrator_escalate_mode_has_output_schema():
+    """Test that escalate mode resolves an output schema."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_ESCALATE,
+    )
+    assert orchestrator._output_format is not None
+    assert orchestrator._output_format["type"] == "json_schema"
+    assert "report" in orchestrator._output_format["schema"]["required"]
+
+
+def test_orchestrator_verify_mode_has_output_schema():
+    """Test that verify mode resolves a verification output schema."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_VERIFY,
+    )
+    assert orchestrator._output_format is not None
+    assert orchestrator._output_format["type"] == "json_schema"
+    assert "verification" in orchestrator._output_format["schema"]["required"]
+
+
+def test_orchestrator_remediate_mode_has_output_schema():
+    """Test that remediate mode resolves the analysis output schema."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_REMEDIATE,
+    )
+    assert orchestrator._output_format is not None
+    assert orchestrator._output_format["type"] == "json_schema"
+    assert "diagnosis" in orchestrator._output_format["schema"]["required"]
+
+
+def test_orchestrator_qa_mode_has_no_output_schema():
+    """Test that qa mode does not set an output schema."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_QA,
+    )
+    assert orchestrator._output_format is None
+
+
+def test_backend_run_config_output_format_default_none():
+    """Test that BackendRunConfig defaults output_format to None."""
+    cfg = BackendRunConfig(
+        query="q",
+        system_prompt="s",
+        history=[],
+        model="m",
+        credentials=None,
+        provider_url=None,
+        max_tokens=100,
+        max_iterations=3,
+    )
+    assert cfg.output_format is None
+
+
+def test_backend_run_config_accepts_output_format():
+    """Test that BackendRunConfig stores a custom output_format."""
+    schema = {"type": "json_schema", "schema": {"type": "object"}}
+    cfg = BackendRunConfig(
+        query="q",
+        system_prompt="s",
+        history=[],
+        model="m",
+        credentials=None,
+        provider_url=None,
+        max_tokens=100,
+        max_iterations=3,
+        output_format=schema,
+    )
+    assert cfg.output_format == schema

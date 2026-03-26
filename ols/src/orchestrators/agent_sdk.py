@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import logging
+import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Optional
 
 from ols import config, constants
 from ols.app.models.models import ChunkType, StreamedChunk, SummarizerResponse
 from ols.src.orchestrators.prompts import (
+    DEPLOY_SYSTEM_PROMPT,
     DESIGN_SYSTEM_PROMPT,
+    MONITOR_SYSTEM_PROMPT,
     REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
+    VERIFY_SYSTEM_PROMPT,
+    build_escalation_prompt,
 )
+from ols.src.orchestrators.schemas import MODE_OUTPUT_SCHEMAS
 from ols.utils.async_utils import (
     drain_generate_response,
     resolve_system_prompt,
@@ -25,6 +31,29 @@ if TYPE_CHECKING:
     from llama_index.core.retrievers import BaseRetriever
 
 logger = logging.getLogger(__name__)
+
+# Module-level mode→config mappings (avoid per-request dict creation)
+_MODE_PROMPTS: dict[str, str] = {
+    constants.MODE_DESIGN: DESIGN_SYSTEM_PROMPT,
+    constants.MODE_DEPLOY: DEPLOY_SYSTEM_PROMPT,
+    constants.MODE_MONITOR: MONITOR_SYSTEM_PROMPT,
+    constants.MODE_REMEDIATE: REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
+    constants.MODE_VERIFY: VERIFY_SYSTEM_PROMPT,
+}
+
+_MODE_TOOLS: dict[str, list[str]] = {
+    constants.MODE_DESIGN: constants.AGENT_SDK_DESIGN_TOOLS,
+    constants.MODE_DEPLOY: constants.AGENT_SDK_WRITE_TOOLS,
+    constants.MODE_MONITOR: constants.AGENT_SDK_MONITOR_TOOLS,
+    constants.MODE_REMEDIATE: constants.AGENT_SDK_READONLY_TOOLS,
+    constants.MODE_ESCALATE: constants.AGENT_SDK_ESCALATION_TOOLS,
+    constants.MODE_VERIFY: constants.AGENT_SDK_VERIFY_TOOLS,
+}
+
+_MODE_OUTPUT_FORMATS: dict[str, dict[str, Any]] = {
+    mode: {"type": "json_schema", "schema": schema}
+    for mode, schema in MODE_OUTPUT_SCHEMAS.items()
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,12 +73,8 @@ class BackendRunConfig:
     max_tokens: int
     max_iterations: int
     mode: str = constants.MODE_QA
-    tools: list[str] = None  # type: ignore[assignment]
-
-    def __post_init__(self) -> None:
-        """Set default tools if not provided."""
-        if self.tools is None:
-            object.__setattr__(self, "tools", list(constants.AGENT_SDK_DEFAULT_TOOLS))
+    tools: list[str] = field(default_factory=lambda: list(constants.AGENT_SDK_DEFAULT_TOOLS))
+    output_format: Optional[dict[str, Any]] = None
 
 
 class AgentSDKBackend(ABC):
@@ -153,7 +178,7 @@ class AnthropicAgentBackend(AgentSDKBackend):
                     type=ChunkType.TOOL_RESULT,
                     data={
                         "id": getattr(block, "tool_use_id", "unknown"),
-                        "name": "tool",
+                        "name": getattr(block, "name", "tool"),
                         "status": "success",
                         "content": content,
                         "type": ChunkType.TOOL_RESULT.value,
@@ -173,7 +198,7 @@ class AnthropicAgentBackend(AgentSDKBackend):
         agent loop autonomously — tool calls, multi-turn reasoning, etc.
         Streams events back as OLS StreamedChunk objects.
         """
-        from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions
+        from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage
         from claude_agent_sdk import query as sdk_query
 
         user_prompt = self._langchain_history_to_prompt(
@@ -184,17 +209,24 @@ class AnthropicAgentBackend(AgentSDKBackend):
             model=run_config.model,
             system_prompt=run_config.system_prompt,
             max_turns=run_config.max_iterations,
-            permission_mode="bypassPermissions",
+            permission_mode=constants.AGENT_SDK_PERMISSION_MODE,
             allowed_tools=run_config.tools,
+            output_format=run_config.output_format,
         )
 
         round_index = 0
         async for msg in sdk_query(prompt=user_prompt, options=options):
-            if isinstance(msg, AssistantMessage):
+            if isinstance(msg, ResultMessage):
+                if msg.structured_output is not None:
+                    yield StreamedChunk(
+                        type=ChunkType.TEXT,
+                        data={"structured_output": msg.structured_output},
+                    )
+            elif isinstance(msg, AssistantMessage):
                 chunks, round_index = self._chunks_from_assistant(msg, round_index)
                 for chunk in chunks:
                     yield chunk
-            elif hasattr(msg, "content") and not isinstance(msg, AssistantMessage):
+            elif hasattr(msg, "content"):
                 for chunk in self._chunks_from_tool_result(msg, round_index):
                     yield chunk
 
@@ -282,9 +314,9 @@ class AgentSDKOrchestrator:
         self.streaming = streaming
         self.mode = mode
 
-        # Mode-specific system prompt and tools
         self._system_prompt = self._resolve_mode_prompt(system_prompt)
         self._tools = self._resolve_mode_tools()
+        self._output_format = self._resolve_mode_schema()
 
         self.provider_config = config.llm_config.providers.get(self.provider)
         if self.provider_config is None:
@@ -317,27 +349,27 @@ class AgentSDKOrchestrator:
 
     def _resolve_mode_prompt(self, system_prompt_override: Optional[str]) -> str:
         """Resolve system prompt based on mode."""
-        # Explicit override takes precedence
         if config.dev_config.enable_system_prompt_override and system_prompt_override:
             return system_prompt_override
 
-        mode_prompts = {
-            constants.MODE_DESIGN: DESIGN_SYSTEM_PROMPT,
-            constants.MODE_REMEDIATE: REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
-        }
-        if self.mode in mode_prompts:
-            return mode_prompts[self.mode]
+        if self.mode == constants.MODE_ESCALATE:
+            target_repo = os.environ.get(
+                constants.ESCALATION_TARGET_REPO_ENV_VAR,
+                constants.DEFAULT_ESCALATION_TARGET_REPO,
+            )
+            return build_escalation_prompt(target_repo)
+
+        if self.mode in _MODE_PROMPTS:
+            return _MODE_PROMPTS[self.mode]
         return resolve_system_prompt(system_prompt_override)
 
     def _resolve_mode_tools(self) -> list[str]:
         """Resolve tool set based on mode."""
-        mode_tools = {
-            constants.MODE_DESIGN: constants.AGENT_SDK_DESIGN_TOOLS,
-            constants.MODE_DEPLOY: constants.AGENT_SDK_WRITE_TOOLS,
-            constants.MODE_REMEDIATE: constants.AGENT_SDK_READONLY_TOOLS,
-            constants.MODE_ESCALATE: constants.AGENT_SDK_READONLY_TOOLS,
-        }
-        return list(mode_tools.get(self.mode, constants.AGENT_SDK_DEFAULT_TOOLS))
+        return list(_MODE_TOOLS.get(self.mode, constants.AGENT_SDK_DEFAULT_TOOLS))
+
+    def _resolve_mode_schema(self) -> Optional[dict[str, Any]]:
+        """Resolve structured output schema based on mode."""
+        return _MODE_OUTPUT_FORMATS.get(self.mode)
 
     async def generate_response(
         self,
@@ -369,6 +401,7 @@ class AgentSDKOrchestrator:
             max_iterations=config.ols_config.max_iterations,
             mode=self.mode,
             tools=self._tools,
+            output_format=self._output_format,
         )
 
         async for chunk in self._backend.run(run_config):

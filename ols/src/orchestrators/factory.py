@@ -43,18 +43,15 @@ def create_orchestrator(
     Returns:
         An orchestrator with generate_response and create_response methods.
     """
-    orchestrator_type = getattr(
-        config.ols_config, "orchestrator_type", constants.ORCHESTRATOR_LANGCHAIN
-    )
+    orchestrator_type = config.ols_config.orchestrator_type
 
     if orchestrator_type == constants.ORCHESTRATOR_AGENT_SDK:
         # Lazy import: claude-agent-sdk is an optional dependency
         from ols.src.orchestrators.agent_sdk import AgentSDKOrchestrator
 
-        backend_type = getattr(
-            config.ols_config,
-            "agent_sdk_backend",
-            constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        backend_type = (
+            config.ols_config.agent_sdk_backend
+            or constants.AGENT_SDK_BACKEND_ANTHROPIC
         )
         resolved_mode = mode or constants.MODE_QA
         logger.info(

@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from langchain_core.messages.ai import AIMessage
 
-from ols import config
+from ols import config, constants
 from ols.app.models.models import (
     LivenessResponse,
     NotAvailableResponse,
@@ -31,8 +31,18 @@ def llm_is_ready() -> bool:
 
     If so, store the success to `llm_is_ready_persistent_state` to cache
     the result for future calls.
+
+    When the orchestrator is configured to use the Agent SDK, the LangChain
+    LLM provider is not used — the SDK manages its own connection to the
+    model. In that case, skip the LangChain-based health check.
     """
     global llm_is_ready_persistent_state, llm_is_ready_timestamp  # pylint: disable=global-statement
+
+    if config.ols_config.orchestrator_type == constants.ORCHESTRATOR_AGENT_SDK:
+        logger.debug("Agent SDK mode — skipping LangChain LLM health check")
+        llm_is_ready_persistent_state = True
+        return True
+
     last_called, llm_is_ready_timestamp = llm_is_ready_timestamp, int(time.time())
     if llm_is_ready_persistent_state is True and (
         not config.ols_config.expire_llm_is_ready_persistent_state

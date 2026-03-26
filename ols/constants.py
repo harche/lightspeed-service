@@ -259,13 +259,34 @@ AGENT_SDK_DEFAULT_TOOLS = ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetc
 MODE_QA = "qa"
 MODE_DESIGN = "design"
 MODE_DEPLOY = "deploy"
+MODE_MONITOR = "monitor"
 MODE_REMEDIATE = "remediate"
 MODE_ESCALATE = "escalate"
-SUPPORTED_MODES = frozenset({MODE_QA, MODE_DESIGN, MODE_DEPLOY, MODE_REMEDIATE, MODE_ESCALATE})
+MODE_VERIFY = "verify"
+SUPPORTED_MODES = frozenset(
+    {MODE_QA, MODE_DESIGN, MODE_DEPLOY, MODE_MONITOR, MODE_REMEDIATE, MODE_ESCALATE, MODE_VERIFY}
+)
 
-# per-mode tool sets — matches Claude Agent SDK defaults from kubeklaw-agent
-AGENT_SDK_READONLY_TOOLS = ["Bash", "Read", "Glob", "Grep", "Skill"]
-AGENT_SDK_WRITE_TOOLS = ["Bash", "Read", "Glob", "Grep", "Skill"]
+# per-mode tool sets for agent SDK orchestrator
+# Real scoping is done by sandbox RBAC, not tool sets — these define what the SDK can invoke.
+AGENT_SDK_BASE_TOOLS = ["Bash", "Read", "Glob", "Grep", "Skill"]
+AGENT_SDK_WEB_TOOLS = AGENT_SDK_BASE_TOOLS + ["WebSearch", "WebFetch"]
 
-# design mode gets web access for researching operators/patterns
-AGENT_SDK_DESIGN_TOOLS = ["Bash", "Read", "Glob", "Grep", "Skill", "WebSearch", "WebFetch"]
+AGENT_SDK_READONLY_TOOLS = AGENT_SDK_BASE_TOOLS
+AGENT_SDK_WRITE_TOOLS = AGENT_SDK_BASE_TOOLS
+AGENT_SDK_DESIGN_TOOLS = AGENT_SDK_WEB_TOOLS
+AGENT_SDK_ESCALATION_TOOLS = AGENT_SDK_WEB_TOOLS
+AGENT_SDK_MONITOR_TOOLS = AGENT_SDK_BASE_TOOLS
+AGENT_SDK_VERIFY_TOOLS = AGENT_SDK_BASE_TOOLS
+
+# Agent SDK runs with full tool permissions — the service handles auth at the API layer
+AGENT_SDK_PERMISSION_MODE = "bypassPermissions"
+
+# skills directory — Claude Agent SDK discovers skills from this path
+# Set LIGHTSPEED_SKILLS_DIR env var to override (default: /app/skills)
+SKILLS_DIR_ENV_VAR = "LIGHTSPEED_SKILLS_DIR"
+DEFAULT_SKILLS_DIR = "/app/skills"
+
+# escalation config — target repo for filing GitHub issues
+ESCALATION_TARGET_REPO_ENV_VAR = "LIGHTSPEED_ESCALATION_TARGET_REPO"
+DEFAULT_ESCALATION_TARGET_REPO = "lightspeed/support-cases"
