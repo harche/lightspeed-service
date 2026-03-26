@@ -13,10 +13,9 @@ from ols.src.orchestrators.agent_sdk import (
     OpenAIAgentBackend,
 )
 from ols.src.orchestrators.prompts import (
-    DEPLOY_SYSTEM_PROMPT,
-    DESIGN_SYSTEM_PROMPT,
-    MONITOR_SYSTEM_PROMPT,
-    REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
+    ANALYSIS_SYSTEM_PROMPT,
+    EXECUTION_SYSTEM_PROMPT,
+    VERIFICATION_SYSTEM_PROMPT,
     build_escalation_prompt,
 )
 from ols.src.orchestrators.schemas import MODE_OUTPUT_SCHEMAS
@@ -288,22 +287,22 @@ def test_orchestrator_default_mode_is_qa():
     assert orchestrator.mode == constants.MODE_QA
 
 
-def test_orchestrator_design_mode_uses_design_prompt():
-    """Test that design mode selects the design system prompt."""
+def test_orchestrator_design_mode_uses_analysis_prompt():
+    """Test that design mode selects the analysis system prompt."""
     orchestrator = AgentSDKOrchestrator(
         backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
         mode=constants.MODE_DESIGN,
     )
-    assert orchestrator._system_prompt == DESIGN_SYSTEM_PROMPT
+    assert orchestrator._system_prompt == ANALYSIS_SYSTEM_PROMPT
 
 
-def test_orchestrator_remediate_mode_uses_remediate_prompt():
-    """Test that remediate mode selects the remediate analysis prompt."""
+def test_orchestrator_remediate_mode_uses_analysis_prompt():
+    """Test that remediate mode selects the analysis system prompt."""
     orchestrator = AgentSDKOrchestrator(
         backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
         mode=constants.MODE_REMEDIATE,
     )
-    assert orchestrator._system_prompt == REMEDIATE_ANALYSIS_SYSTEM_PROMPT
+    assert orchestrator._system_prompt == ANALYSIS_SYSTEM_PROMPT
 
 
 def test_orchestrator_qa_mode_uses_config_prompt():
@@ -373,25 +372,25 @@ def test_orchestrator_system_prompt_override_ignored_when_disabled():
         mode=constants.MODE_DESIGN,
         system_prompt="my custom prompt",
     )
-    assert orchestrator._system_prompt == DESIGN_SYSTEM_PROMPT
+    assert orchestrator._system_prompt == ANALYSIS_SYSTEM_PROMPT
 
 
-def test_orchestrator_deploy_mode_uses_deploy_prompt():
-    """Test that deploy mode selects the deploy system prompt."""
+def test_orchestrator_deploy_mode_uses_execution_prompt():
+    """Test that deploy mode selects the execution system prompt."""
     orchestrator = AgentSDKOrchestrator(
         backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
         mode=constants.MODE_DEPLOY,
     )
-    assert orchestrator._system_prompt == DEPLOY_SYSTEM_PROMPT
+    assert orchestrator._system_prompt == EXECUTION_SYSTEM_PROMPT
 
 
-def test_orchestrator_monitor_mode_uses_monitor_prompt():
-    """Test that monitor mode selects the monitor system prompt."""
+def test_orchestrator_monitor_mode_uses_analysis_prompt():
+    """Test that monitor mode selects the analysis system prompt."""
     orchestrator = AgentSDKOrchestrator(
         backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
         mode=constants.MODE_MONITOR,
     )
-    assert orchestrator._system_prompt == MONITOR_SYSTEM_PROMPT
+    assert orchestrator._system_prompt == ANALYSIS_SYSTEM_PROMPT
 
 
 def test_orchestrator_escalate_mode_uses_escalation_prompt():
@@ -442,6 +441,41 @@ def test_mode_monitor_in_supported_modes():
     assert constants.MODE_MONITOR in constants.SUPPORTED_MODES
 
 
+def test_orchestrator_verify_mode_uses_verification_prompt():
+    """Test that verify mode selects the verification system prompt."""
+    orchestrator = AgentSDKOrchestrator(
+        backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+        mode=constants.MODE_VERIFY,
+    )
+    assert orchestrator._system_prompt == VERIFICATION_SYSTEM_PROMPT
+
+
+def test_analysis_modes_share_same_prompt():
+    """Test that design, remediate, and monitor all use the analysis prompt."""
+    prompts = {}
+    for mode in (constants.MODE_DESIGN, constants.MODE_REMEDIATE, constants.MODE_MONITOR):
+        orchestrator = AgentSDKOrchestrator(
+            backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+            mode=mode,
+        )
+        prompts[mode] = orchestrator._system_prompt
+    assert prompts[constants.MODE_DESIGN] is prompts[constants.MODE_REMEDIATE]
+    assert prompts[constants.MODE_DESIGN] is prompts[constants.MODE_MONITOR]
+
+
+def test_analysis_modes_share_same_schema():
+    """Test that design, remediate, and monitor share the analysis output schema."""
+    schemas = {}
+    for mode in (constants.MODE_DESIGN, constants.MODE_REMEDIATE, constants.MODE_MONITOR):
+        orchestrator = AgentSDKOrchestrator(
+            backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
+            mode=mode,
+        )
+        schemas[mode] = orchestrator._output_format["schema"]
+    assert schemas[constants.MODE_DESIGN] is schemas[constants.MODE_REMEDIATE]
+    assert schemas[constants.MODE_DESIGN] is schemas[constants.MODE_MONITOR]
+
+
 def test_all_modes_have_prompt_mapping():
     """Test that every non-QA mode has a dedicated system prompt."""
     modes_with_prompts = {
@@ -465,14 +499,14 @@ def test_all_modes_have_prompt_mapping():
 
 
 def test_orchestrator_design_mode_has_output_schema():
-    """Test that design mode resolves an output schema."""
+    """Test that design mode resolves the analysis output schema."""
     orchestrator = AgentSDKOrchestrator(
         backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
         mode=constants.MODE_DESIGN,
     )
     assert orchestrator._output_format is not None
     assert orchestrator._output_format["type"] == "json_schema"
-    assert "proposal" in orchestrator._output_format["schema"]["required"]
+    assert "analysis" in orchestrator._output_format["schema"]["required"]
 
 
 def test_orchestrator_deploy_mode_has_output_schema():
@@ -487,14 +521,14 @@ def test_orchestrator_deploy_mode_has_output_schema():
 
 
 def test_orchestrator_monitor_mode_has_output_schema():
-    """Test that monitor mode resolves an output schema."""
+    """Test that monitor mode resolves the analysis output schema."""
     orchestrator = AgentSDKOrchestrator(
         backend_type=constants.AGENT_SDK_BACKEND_ANTHROPIC,
         mode=constants.MODE_MONITOR,
     )
     assert orchestrator._output_format is not None
     assert orchestrator._output_format["type"] == "json_schema"
-    assert "health" in orchestrator._output_format["schema"]["required"]
+    assert "analysis" in orchestrator._output_format["schema"]["required"]
 
 
 def test_orchestrator_escalate_mode_has_output_schema():
@@ -527,7 +561,7 @@ def test_orchestrator_remediate_mode_has_output_schema():
     )
     assert orchestrator._output_format is not None
     assert orchestrator._output_format["type"] == "json_schema"
-    assert "diagnosis" in orchestrator._output_format["schema"]["required"]
+    assert "analysis" in orchestrator._output_format["schema"]["required"]
 
 
 def test_orchestrator_qa_mode_has_no_output_schema():

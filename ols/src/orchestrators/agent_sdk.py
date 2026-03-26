@@ -11,11 +11,9 @@ from typing import TYPE_CHECKING, Any, AsyncGenerator, Optional
 from ols import config, constants
 from ols.app.models.models import ChunkType, StreamedChunk, SummarizerResponse
 from ols.src.orchestrators.prompts import (
-    DEPLOY_SYSTEM_PROMPT,
-    DESIGN_SYSTEM_PROMPT,
-    MONITOR_SYSTEM_PROMPT,
-    REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
-    VERIFY_SYSTEM_PROMPT,
+    ANALYSIS_SYSTEM_PROMPT,
+    EXECUTION_SYSTEM_PROMPT,
+    VERIFICATION_SYSTEM_PROMPT,
     build_escalation_prompt,
 )
 from ols.src.orchestrators.schemas import MODE_OUTPUT_SCHEMAS
@@ -34,11 +32,11 @@ logger = logging.getLogger(__name__)
 
 # Module-level mode→config mappings (avoid per-request dict creation)
 _MODE_PROMPTS: dict[str, str] = {
-    constants.MODE_DESIGN: DESIGN_SYSTEM_PROMPT,
-    constants.MODE_DEPLOY: DEPLOY_SYSTEM_PROMPT,
-    constants.MODE_MONITOR: MONITOR_SYSTEM_PROMPT,
-    constants.MODE_REMEDIATE: REMEDIATE_ANALYSIS_SYSTEM_PROMPT,
-    constants.MODE_VERIFY: VERIFY_SYSTEM_PROMPT,
+    constants.MODE_DESIGN: ANALYSIS_SYSTEM_PROMPT,
+    constants.MODE_MONITOR: ANALYSIS_SYSTEM_PROMPT,
+    constants.MODE_REMEDIATE: ANALYSIS_SYSTEM_PROMPT,
+    constants.MODE_DEPLOY: EXECUTION_SYSTEM_PROMPT,
+    constants.MODE_VERIFY: VERIFICATION_SYSTEM_PROMPT,
 }
 
 _MODE_TOOLS: dict[str, list[str]] = {

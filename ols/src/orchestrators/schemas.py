@@ -1,5 +1,13 @@
 """Structured output schemas for agent SDK capability modes.
 
+Three phase-aligned schemas cover the full lifecycle:
+  ANALYSIS  — covers design, remediate-analysis, and monitor
+  EXECUTION — covers deploy and remediate-execution
+  VERIFICATION — independent post-execution verification
+
+Escalation retains a separate schema because its output shape
+(support case report, KB search, GitHub issue) is unique.
+
 These JSON schemas can be passed to Claude's structured output feature to ensure
 responses conform to a predictable shape for downstream processing
 (operator reconcilers, console UI rendering, etc.).
@@ -33,166 +41,65 @@ _RESOURCE_REF_SCHEMA: dict[str, Any] = {
 }
 
 
-# --- Design mode schema ---
+# --- Analysis schema (design + remediate-analysis + monitor) ---
 
-DESIGN_OUTPUT_SCHEMA: dict[str, Any] = {
+ANALYSIS_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "proposal": {
+        "analysis": {
             "type": "object",
             "properties": {
                 "summary": {"type": "string"},
-                "operators": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "packagemanifest name",
-                            },
-                            "displayName": {"type": "string"},
-                            "channel": {
-                                "type": "string",
-                                "description": "subscription channel",
-                            },
-                            "catalogSource": {"type": "string"},
-                            "installed": {"type": "boolean"},
-                            "purpose": {"type": "string"},
+                "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
+                "evidence": {"type": "array", "items": _EVIDENCE_SCHEMA},
+                "relatedResources": {"type": "array", "items": _RESOURCE_REF_SCHEMA},
+                "diagnosis": {
+                    "type": "object",
+                    "description": "Present when analysing an alert or issue",
+                    "properties": {
+                        "rootCause": {"type": "string"},
+                        "confidence": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
                         },
-                        "required": [
-                            "name",
-                            "displayName",
-                            "channel",
-                            "catalogSource",
-                            "installed",
-                            "purpose",
-                        ],
                     },
+                    "required": ["rootCause", "confidence"],
                 },
-                "operatorCRs": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "apiVersion": {"type": "string"},
-                            "kind": {"type": "string"},
-                            "name": {"type": "string"},
-                            "purpose": {"type": "string"},
-                            "keyFields": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "path": {"type": "string"},
-                                        "value": {"type": "string"},
-                                        "description": {"type": "string"},
-                                    },
-                                    "required": ["path", "value", "description"],
+                "proposal": {
+                    "type": "object",
+                    "description": "Proposed action — remediation or new deployment",
+                    "properties": {
+                        "description": {"type": "string"},
+                        "actions": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "type": {"type": "string"},
+                                    "description": {"type": "string"},
+                                    "resource": _RESOURCE_REF_SCHEMA,
+                                    "patch": {"type": "string"},
                                 },
+                                "required": ["type", "description"],
                             },
                         },
-                        "required": ["apiVersion", "kind", "name", "purpose", "keyFields"],
-                    },
-                },
-                "appComponents": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string"},
-                            "kind": {"type": "string"},
-                            "description": {"type": "string"},
-                            "port": {"type": "integer"},
-                            "dependencies": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
+                        "risk": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
                         },
-                        "required": ["name", "kind", "description"],
+                        "reversible": {"type": "boolean"},
+                        "estimatedImpact": {"type": "string"},
                     },
+                    "required": ["description", "actions"],
                 },
-                "infraResources": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "kind": {"type": "string"},
-                            "name": {"type": "string"},
-                            "purpose": {"type": "string"},
-                        },
-                        "required": ["kind", "name", "purpose"],
-                    },
-                },
-                "risks": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-            },
-            "required": [
-                "summary",
-                "operators",
-                "operatorCRs",
-                "appComponents",
-                "infraResources",
-            ],
-        },
-    },
-    "required": ["proposal"],
-}
-
-
-# --- Deploy mode schema ---
-
-DEPLOY_OUTPUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "result": {
-            "type": "object",
-            "properties": {
-                "success": {"type": "boolean"},
-                "namespace": {"type": "string"},
-                "components": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string"},
-                            "kind": {"type": "string"},
-                            "ready": {"type": "boolean"},
-                            "image": {"type": "string"},
-                        },
-                        "required": ["name", "kind", "ready"],
-                    },
-                },
-                "issues": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-            },
-            "required": ["success", "components"],
-        },
-    },
-    "required": ["result"],
-}
-
-
-# --- Monitor mode schema ---
-
-MONITOR_OUTPUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "health": {
-            "type": "object",
-            "properties": {
-                "status": {
+                "healthStatus": {
                     "type": "string",
+                    "description": "Present for monitoring checks",
                     "enum": ["healthy", "degraded", "critical"],
                 },
-                "component": {"type": "string"},
-                "namespace": {"type": "string"},
                 "resources": {
                     "type": "array",
+                    "description": "Resources inspected during analysis",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -206,6 +113,7 @@ MONITOR_OUTPUT_SCHEMA: dict[str, Any] = {
                 },
                 "metrics": {
                     "type": "array",
+                    "description": "Metrics gathered during analysis",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -220,80 +128,28 @@ MONITOR_OUTPUT_SCHEMA: dict[str, Any] = {
                         "required": ["metric", "value", "status"],
                     },
                 },
-                "findings": {
+                "risks": {
                     "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "observation": {"type": "string"},
-                            "requiresAction": {"type": "boolean"},
-                            "recommendation": {"type": "string"},
-                        },
-                        "required": ["observation", "requiresAction"],
-                    },
+                    "items": {"type": "string"},
                 },
-                "recommendation": {"type": "string"},
             },
-            "required": ["status", "component", "resources", "findings", "recommendation"],
+            "required": ["summary", "evidence"],
         },
     },
-    "required": ["health"],
+    "required": ["analysis"],
 }
 
 
-# --- Remediate analysis schema ---
+# --- Execution schema (deploy + remediate-execution) ---
 
-REMEDIATE_ANALYSIS_OUTPUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "diagnosis": {
-            "type": "object",
-            "properties": {
-                "summary": {"type": "string"},
-                "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
-                "rootCause": {"type": "string"},
-                "evidence": {"type": "array", "items": _EVIDENCE_SCHEMA},
-                "relatedResources": {"type": "array", "items": _RESOURCE_REF_SCHEMA},
-            },
-            "required": ["summary", "confidence", "rootCause", "evidence", "relatedResources"],
-        },
-        "proposal": {
-            "type": "object",
-            "properties": {
-                "description": {"type": "string"},
-                "actions": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "type": {"type": "string"},
-                            "description": {"type": "string"},
-                            "resource": _RESOURCE_REF_SCHEMA,
-                            "patch": {"type": "string"},
-                        },
-                        "required": ["type", "description"],
-                    },
-                },
-                "risk": {"type": "string", "enum": ["low", "medium", "high"]},
-                "reversible": {"type": "boolean"},
-                "estimatedImpact": {"type": "string"},
-            },
-            "required": ["description", "actions", "risk", "reversible"],
-        },
-    },
-    "required": ["diagnosis", "proposal"],
-}
-
-
-# --- Remediate execution schema ---
-
-REMEDIATE_EXECUTION_OUTPUT_SCHEMA: dict[str, Any] = {
+EXECUTION_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "result": {
             "type": "object",
             "properties": {
                 "success": {"type": "boolean"},
+                "namespace": {"type": "string"},
                 "actionsTaken": {
                     "type": "array",
                     "items": {
@@ -309,14 +165,33 @@ REMEDIATE_EXECUTION_OUTPUT_SCHEMA: dict[str, Any] = {
                         "required": ["type", "description", "success"],
                     },
                 },
+                "components": {
+                    "type": "array",
+                    "description": "Components deployed (for deployment tasks)",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string"},
+                            "kind": {"type": "string"},
+                            "ready": {"type": "boolean"},
+                            "image": {"type": "string"},
+                        },
+                        "required": ["name", "kind", "ready"],
+                    },
+                },
                 "verification": {
                     "type": "object",
                     "properties": {
                         "conditionImproved": {"type": "boolean"},
+                        "allHealthy": {"type": "boolean"},
                         "summary": {"type": "string"},
                         "evidence": {"type": "array", "items": _EVIDENCE_SCHEMA},
                     },
-                    "required": ["conditionImproved", "summary", "evidence"],
+                    "required": ["summary"],
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {"type": "string"},
                 },
             },
             "required": ["success", "actionsTaken", "verification"],
@@ -326,7 +201,49 @@ REMEDIATE_EXECUTION_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-# --- Escalation schema ---
+# --- Verification schema ---
+
+VERIFICATION_OUTPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "verification": {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "string",
+                    "enum": ["PASSED", "FAILED"],
+                },
+                "confidence": {
+                    "type": "string",
+                    "enum": ["high", "medium", "low"],
+                },
+                "checks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": {"type": "string"},
+                            "expected": {"type": "string"},
+                            "actual": {"type": "string"},
+                            "passed": {"type": "boolean"},
+                        },
+                        "required": ["description", "expected", "actual", "passed"],
+                    },
+                },
+                "evidence": {"type": "array", "items": _EVIDENCE_SCHEMA},
+                "issues": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            "required": ["result", "confidence", "checks", "evidence"],
+        },
+    },
+    "required": ["verification"],
+}
+
+
+# --- Escalation schema (separate — unique workflow) ---
 
 ESCALATION_OUTPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -401,56 +318,13 @@ ESCALATION_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
-# --- Verify mode schema ---
-
-VERIFY_OUTPUT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "verification": {
-            "type": "object",
-            "properties": {
-                "result": {
-                    "type": "string",
-                    "enum": ["PASSED", "FAILED"],
-                },
-                "confidence": {
-                    "type": "string",
-                    "enum": ["high", "medium", "low"],
-                },
-                "checks": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "description": {"type": "string"},
-                            "expected": {"type": "string"},
-                            "actual": {"type": "string"},
-                            "passed": {"type": "boolean"},
-                        },
-                        "required": ["description", "expected", "actual", "passed"],
-                    },
-                },
-                "evidence": {"type": "array", "items": _EVIDENCE_SCHEMA},
-                "issues": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                },
-            },
-            "required": ["result", "confidence", "checks", "evidence"],
-        },
-    },
-    "required": ["verification"],
-}
-
-
 # Map mode constants to their output schemas for lookup.
-# MODE_REMEDIATE maps to the analysis schema by default; the execution
-# schema is used when the operator transitions to the execution phase.
+# Multiple modes map to the same phase-aligned schema.
 MODE_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
-    constants.MODE_DESIGN: DESIGN_OUTPUT_SCHEMA,
-    constants.MODE_DEPLOY: DEPLOY_OUTPUT_SCHEMA,
-    constants.MODE_MONITOR: MONITOR_OUTPUT_SCHEMA,
-    constants.MODE_REMEDIATE: REMEDIATE_ANALYSIS_OUTPUT_SCHEMA,
+    constants.MODE_DESIGN: ANALYSIS_OUTPUT_SCHEMA,
+    constants.MODE_MONITOR: ANALYSIS_OUTPUT_SCHEMA,
+    constants.MODE_REMEDIATE: ANALYSIS_OUTPUT_SCHEMA,
+    constants.MODE_DEPLOY: EXECUTION_OUTPUT_SCHEMA,
     constants.MODE_ESCALATE: ESCALATION_OUTPUT_SCHEMA,
-    constants.MODE_VERIFY: VERIFY_OUTPUT_SCHEMA,
+    constants.MODE_VERIFY: VERIFICATION_OUTPUT_SCHEMA,
 }
