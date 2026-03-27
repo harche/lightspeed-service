@@ -13,6 +13,7 @@ from ols.app.models.models import ChunkType, StreamedChunk, SummarizerResponse
 from ols.src.orchestrators.prompts import (
     ANALYSIS_SYSTEM_PROMPT,
     EXECUTION_SYSTEM_PROMPT,
+    RBAC_EVALUATION_SYSTEM_PROMPT,
     VERIFICATION_SYSTEM_PROMPT,
     build_escalation_prompt,
 )
@@ -37,6 +38,7 @@ _MODE_PROMPTS: dict[str, str] = {
     constants.MODE_REMEDIATE: ANALYSIS_SYSTEM_PROMPT,
     constants.MODE_DEPLOY: EXECUTION_SYSTEM_PROMPT,
     constants.MODE_VERIFY: VERIFICATION_SYSTEM_PROMPT,
+    constants.MODE_RBAC_EVALUATION: RBAC_EVALUATION_SYSTEM_PROMPT,
 }
 
 _MODE_TOOLS: dict[str, list[str]] = {
@@ -46,6 +48,7 @@ _MODE_TOOLS: dict[str, list[str]] = {
     constants.MODE_REMEDIATE: constants.AGENT_SDK_READONLY_TOOLS,
     constants.MODE_ESCALATE: constants.AGENT_SDK_ESCALATION_TOOLS,
     constants.MODE_VERIFY: constants.AGENT_SDK_VERIFY_TOOLS,
+    constants.MODE_RBAC_EVALUATION: constants.AGENT_SDK_RBAC_EVALUATION_TOOLS,
 }
 
 _MODE_OUTPUT_FORMATS: dict[str, dict[str, Any]] = {

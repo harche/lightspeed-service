@@ -40,6 +40,18 @@ _RESOURCE_REF_SCHEMA: dict[str, Any] = {
     "required": ["kind", "name"],
 }
 
+_PERMISSION_RULE_ITEM_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "apiGroups": {"type": "array", "items": {"type": "string"}},
+        "resources": {"type": "array", "items": {"type": "string"}},
+        "verbs": {"type": "array", "items": {"type": "string"}},
+        "justification": {"type": "string"},
+    },
+    "required": ["apiGroups", "resources", "verbs", "justification"],
+    "additionalProperties": False,
+}
+
 
 # --- Analysis schema (design + remediate-analysis + monitor) ---
 
@@ -318,6 +330,70 @@ ESCALATION_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
+# --- RBAC Evaluation schema (agent-proposed RBAC permissions) ---
+
+RBAC_EVALUATION_OUTPUT_SCHEMA: dict[str, Any] = {
+    "name": "rbac_evaluation",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "requestedPermissions": {
+                "type": "object",
+                "properties": {
+                    "namespaceScoped": {
+                        "type": "array",
+                        "items": _PERMISSION_RULE_ITEM_SCHEMA,
+                    },
+                    "clusterScoped": {
+                        "type": "array",
+                        "items": _PERMISSION_RULE_ITEM_SCHEMA,
+                    },
+                },
+                "required": ["namespaceScoped", "clusterScoped"],
+                "additionalProperties": False,
+            },
+            "escalationChecks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": {"type": "string"},
+                        "status": {
+                            "type": "string",
+                            "enum": ["safe", "mitigated", "justified"],
+                        },
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["pattern", "status", "reason"],
+                    "additionalProperties": False,
+                },
+            },
+            "requestedResources": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "apiVersion": {"type": "string"},
+                        "kind": {"type": "string"},
+                        "name": {"type": "string"},
+                        "spec": {"type": "object"},
+                    },
+                    "required": ["apiVersion", "kind", "name"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": [
+            "requestedPermissions",
+            "escalationChecks",
+            "requestedResources",
+        ],
+        "additionalProperties": False,
+    },
+}
+
+
 # Map mode constants to their output schemas for lookup.
 # Multiple modes map to the same phase-aligned schema.
 MODE_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
@@ -327,4 +403,5 @@ MODE_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
     constants.MODE_DEPLOY: EXECUTION_OUTPUT_SCHEMA,
     constants.MODE_ESCALATE: ESCALATION_OUTPUT_SCHEMA,
     constants.MODE_VERIFY: VERIFICATION_OUTPUT_SCHEMA,
+    constants.MODE_RBAC_EVALUATION: RBAC_EVALUATION_OUTPUT_SCHEMA,
 }
